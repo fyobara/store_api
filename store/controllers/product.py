@@ -2,7 +2,7 @@ from typing import List
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, status
 from pydantic import UUID4
 from store.core.exceptions import NotFoundException
-
+from store.core.exceptions import InsertionException
 from store.schemas.product import ProductIn, ProductOut, ProductUpdate, ProductUpdateOut
 from store.usecases.product import ProductUsecase
 
@@ -13,8 +13,10 @@ router = APIRouter(tags=["products"])
 async def post(
     body: ProductIn = Body(...), usecase: ProductUsecase = Depends()
 ) -> ProductOut:
-    return await usecase.create(body=body)
-
+        try:
+            return await usecase.create(body=body)
+        except InsertionException as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message))
 
 @router.get(path="/{id}", status_code=status.HTTP_200_OK)
 async def get(
@@ -29,7 +31,24 @@ async def get(
 @router.get(path="/", status_code=status.HTTP_200_OK)
 async def query(usecase: ProductUsecase = Depends()) -> List[ProductOut]:
     return await usecase.query()
+    
 
+async def list_products(
+    valor_minimo: float = Query(None, description="Filtro Valor Mínimo"),
+    valor_maximo: float = Query(None, description="Filtro Valor Mínimo"),
+    usecase: ProductUsecase = Depends()
+) -> List[ProductOut]:
+    products = await usecase.query()
+
+    if valor_minimo is not None and valor_maximo is not None:
+        filtro = [p for p in products if valor_minimo < p.price < valor_maximo]
+    elif valor_minimo is not None:
+        filtro = [p for p in products if p.price >= valor_minimo]
+    elif valor_maximo is not None:
+        filtro = [p for p in products if p.price <= valor_maximo]
+    else:
+        filtro = products
+    return filtro
 
 @router.patch(path="/{id}", status_code=status.HTTP_200_OK)
 async def patch(
